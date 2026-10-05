@@ -58,6 +58,27 @@ class RdsDataServiceTest {
      * Data API on 2026-09-13.
      */
     @Test
+    void executeStatementRejectsAResponseOverOneMebibyte() throws Exception {
+        TestHarness harness = new TestHarness();
+        ObjectNode request = harness.request(
+                "select repeat('x', 20000) as c from system_range(1, 100)");
+
+        AwsException error = assertThrows(AwsException.class,
+                () -> harness.service.executeStatement(request, REGION));
+        assertEquals("BadRequestException", error.getErrorCode());
+        assertEquals("Database response exceeded size limit", error.getMessage());
+    }
+
+    @Test
+    void executeStatementAllowsAResponseUnderOneMebibyte() throws Exception {
+        TestHarness harness = new TestHarness();
+        ObjectNode response = harness.service.executeStatement(harness.request(
+                "select repeat('x', 20000) as c from system_range(1, 10)"), REGION);
+
+        assertEquals(10, response.get("records").size());
+    }
+
+    @Test
     void rejectsPostgresResultTypesTheDataApiDoesNotSupport() throws Exception {
         ResultSetMetaData meta = mock(ResultSetMetaData.class);
         when(meta.getColumnCount()).thenReturn(2);

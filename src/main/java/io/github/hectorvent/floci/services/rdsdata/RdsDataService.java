@@ -42,6 +42,9 @@ import java.util.concurrent.TimeUnit;
 @ApplicationScoped
 public class RdsDataService implements Resettable {
 
+    /** The Data API fails an ExecuteStatement whose response is larger than 1 MiB. */
+    private static final long MAX_RESPONSE_BYTES = 1024L * 1024L;
+
     private static final Logger LOG = Logger.getLogger(RdsDataService.class);
 
     /** Statement keywords whose result is a write, even when a {@code RETURNING} clause also reports rows. */
@@ -533,10 +536,15 @@ public class RdsDataService implements Resettable {
     private ArrayNode records(ResultSet rs, ResultSetMetaData meta) throws SQLException {
         ArrayNode records = objectMapper.createArrayNode();
         int columnCount = meta.getColumnCount();
+        long responseBytes = 0;
         while (rs.next()) {
             ArrayNode row = objectMapper.createArrayNode();
             for (int i = 1; i <= columnCount; i++) {
                 row.add(RdsDataFieldMapper.toField(objectMapper, rs.getObject(i), meta.getColumnType(i)));
+            }
+            responseBytes += row.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            if (responseBytes > MAX_RESPONSE_BYTES) {
+                throw new AwsException("BadRequestException", "Database response exceeded size limit", 400);
             }
             records.add(row);
         }
