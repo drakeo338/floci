@@ -53,10 +53,6 @@ class RdsDataServiceTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * Message and error code checked against Aurora PostgreSQL 17.7 through the real
-     * Data API on 2026-09-13.
-     */
     @Test
     void executeStatementRejectsAResponseOverOneMebibyte() throws Exception {
         TestHarness harness = new TestHarness();
@@ -78,6 +74,26 @@ class RdsDataServiceTest {
         assertEquals(10, response.get("records").size());
     }
 
+    /** Records serialize as [[{"stringValue":"..."}]]: 22 bytes around a single string. */
+    @Test
+    void executeStatementCountsTheWholeRecordsArrayAtTheBoundary() throws Exception {
+        int overhead = 22;
+        int limit = 1024 * 1024;
+        TestHarness harness = new TestHarness();
+        ObjectNode exact = harness.service.executeStatement(harness.request(
+                "select repeat('x', " + (limit - overhead) + ") as c"), REGION);
+        assertEquals(1, exact.get("records").size());
+
+        ObjectNode over = harness.request("select repeat('x', " + (limit - overhead + 1) + ") as c");
+        AwsException error = assertThrows(AwsException.class,
+                () -> harness.service.executeStatement(over, REGION));
+        assertEquals("Database response exceeded size limit", error.getMessage());
+    }
+
+    /**
+     * Message and error code checked against Aurora PostgreSQL 17.7 through the real
+     * Data API on 2026-09-13.
+     */
     @Test
     void rejectsPostgresResultTypesTheDataApiDoesNotSupport() throws Exception {
         ResultSetMetaData meta = mock(ResultSetMetaData.class);
