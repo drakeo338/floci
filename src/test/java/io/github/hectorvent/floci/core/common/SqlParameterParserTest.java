@@ -40,6 +40,23 @@ class SqlParameterParserTest {
     }
 
     @Test
+    void rdsAcceptsParameterNamesThatStartWithADigit() {
+        ParsedSql parsed = SqlParameterParser.parse(
+                "select :1::int as x, :2 as y, :1", Options.RDS_POSTGRESQL);
+
+        assertEquals("select ?::int as x, ? as y, ?", parsed.sql());
+        assertEquals(List.of("1", "2", "1"), parsed.parameterOrder());
+    }
+
+    @Test
+    void redshiftKeepsColonDigitAsLiteralText() {
+        ParsedSql parsed = SqlParameterParser.parse("select :1", Options.REDSHIFT);
+
+        assertEquals("select :1", parsed.sql());
+        assertEquals(List.of(), parsed.parameterOrder());
+    }
+
+    @Test
     void redshiftDoesNotTreatBackticksAsQuotedIdentifiers() {
         ParsedSql parsed = SqlParameterParser.parse(
                 "select `x:y` from t where id = :id", Options.REDSHIFT);

@@ -26,11 +26,14 @@ public final class SqlParameterParser {
      * @param backslashEscapes whether backslash escapes characters in string literals (e.g. MySQL)
      * @param escapeStrings whether PostgreSQL escape strings ({@code E'...'}/{@code e'...'})
      *                      honor backslash escapes (e.g. Redshift Data API)
+     * @param numericNames whether a parameter name may start with a digit, as in
+     *                     {@code :1} (RDS Data API)
      */
-    public record Options(boolean allowBackticks, boolean backslashEscapes, boolean escapeStrings) {
-        public static final Options REDSHIFT = new Options(false, false, true);
-        public static final Options RDS_MYSQL = new Options(true, true, false);
-        public static final Options RDS_POSTGRESQL = new Options(true, false, false);
+    public record Options(boolean allowBackticks, boolean backslashEscapes, boolean escapeStrings,
+                          boolean numericNames) {
+        public static final Options REDSHIFT = new Options(false, false, true, false);
+        public static final Options RDS_MYSQL = new Options(true, true, false, true);
+        public static final Options RDS_POSTGRESQL = new Options(true, false, false, true);
     }
 
     /**
@@ -96,7 +99,7 @@ public final class SqlParameterParser {
                     i += 2;
                     continue;
                 }
-                if (i + 1 < len && isNameStart(sql.charAt(i + 1))) {
+                if (i + 1 < len && isNameStart(sql.charAt(i + 1), options)) {
                     int j = i + 1;
                     while (j < len && isNamePart(sql.charAt(j))) {
                         j++;
@@ -211,8 +214,8 @@ public final class SqlParameterParser {
         return quotePos - 1 == 0 || !isNamePart(sql.charAt(quotePos - 2));
     }
 
-    private static boolean isNameStart(char c) {
-        return Character.isLetter(c) || c == '_';
+    private static boolean isNameStart(char c, Options options) {
+        return Character.isLetter(c) || c == '_' || (options.numericNames() && c >= '0' && c <= '9');
     }
 
     private static boolean isNamePart(char c) {
