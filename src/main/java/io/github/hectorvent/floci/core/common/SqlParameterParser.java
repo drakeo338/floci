@@ -99,7 +99,8 @@ public final class SqlParameterParser {
                     i += 2;
                     continue;
                 }
-                if (i + 1 < len && isNameStart(sql.charAt(i + 1), options)) {
+                if (i + 1 < len && isNameStart(sql.charAt(i + 1), options)
+                        && !isArraySliceBound(sql, i)) {
                     int j = i + 1;
                     while (j < len && isNamePart(sql.charAt(j))) {
                         j++;
@@ -212,6 +213,32 @@ public final class SqlParameterParser {
             return false;
         }
         return quotePos - 1 == 0 || !isNamePart(sql.charAt(quotePos - 2));
+    }
+
+    /**
+     * Whether the {@code :} at {@code colon}, followed by a digit, is a PostgreSQL
+     * array-slice separator ({@code arr[1:2]}, {@code arr[:2]}, {@code arr[a:2]},
+     * {@code arr[f(x):2]}) rather than the start of a numeric parameter. Only a
+     * digit-leading name can be confused this way, so letter-leading names are
+     * never checked. A colon glued to the end of an operand, or following an
+     * opening bracket, is a slice; a colon after whitespace, an operator, a
+     * comma or an opening parenthesis is a parameter.
+     */
+    private static boolean isArraySliceBound(String sql, int colon) {
+        if (!Character.isDigit(sql.charAt(colon + 1))) {
+            return false;
+        }
+        if (colon > 0) {
+            char prev = sql.charAt(colon - 1);
+            if (isNamePart(prev) || prev == ']' || prev == ')' || prev == '[') {
+                return true;
+            }
+        }
+        int k = colon - 1;
+        while (k >= 0 && Character.isWhitespace(sql.charAt(k))) {
+            k--;
+        }
+        return k >= 0 && sql.charAt(k) == '[';
     }
 
     private static boolean isNameStart(char c, Options options) {

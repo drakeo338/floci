@@ -163,4 +163,27 @@ class SqlParameterParserTest {
         assertTrue(SqlParameterParser.isMultiStatement("select `a;b`", Options.REDSHIFT));
         assertFalse(SqlParameterParser.isMultiStatement("select `a;b`", Options.RDS_MYSQL));
     }
+
+    @Test
+    void numericNamesAreNotArraySliceBounds() {
+        for (String sql : new String[] {
+                "select arr[1:2] from t", "select arr[:2] from t", "select arr[1:] from t",
+                "select arr[a:2] from t", "select arr[ :2] from t", "select a[b[1]:2] from t",
+                "select a[f(x):2] from t", "select a[1:2][3:4] from t"}) {
+            var parsed = SqlParameterParser.parse(sql, SqlParameterParser.Options.RDS_POSTGRESQL);
+            assertEquals(sql, parsed.sql());
+            assertTrue(parsed.parameterOrder().isEmpty(), sql);
+        }
+    }
+
+    @Test
+    void numericNamesStillParametersOutsideSlices() {
+        var o = SqlParameterParser.Options.RDS_POSTGRESQL;
+        var p = SqlParameterParser.parse("select :1, (:2), a+:3 from t where id = :4 and x in (:5,:6)", o);
+        assertEquals("select ?, (?), a+? from t where id = ? and x in (?,?)", p.sql());
+        assertEquals(java.util.List.of("1", "2", "3", "4", "5", "6"), p.parameterOrder());
+        var q = SqlParameterParser.parse("select arr[1:2] from t where id = :1", o);
+        assertEquals("select arr[1:2] from t where id = ?", q.sql());
+        assertEquals(java.util.List.of("1"), q.parameterOrder());
+    }
 }
