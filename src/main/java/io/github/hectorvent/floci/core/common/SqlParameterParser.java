@@ -1,6 +1,8 @@
 package io.github.hectorvent.floci.core.common;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -55,6 +57,8 @@ public final class SqlParameterParser {
         List<String> order = new ArrayList<>();
         int len = sql.length();
         int i = 0;
+        // One entry per open bracket or parenthesis; true marks an array subscript.
+        Deque<Boolean> nesting = new ArrayDeque<>();
         while (i < len) {
             char c = sql.charAt(i);
 
@@ -93,6 +97,14 @@ public final class SqlParameterParser {
                 continue;
             }
 
+            if (c == '[') {
+                nesting.push(isSubscriptBracket(sql, i));
+            } else if (c == '(') {
+                nesting.push(Boolean.FALSE);
+            } else if ((c == ']' || c == ')') && !nesting.isEmpty()) {
+                nesting.pop();
+            }
+
             if (c == ':') {
                 if (i + 1 < len && sql.charAt(i + 1) == ':') {
                     out.append("::");
@@ -100,7 +112,7 @@ public final class SqlParameterParser {
                     continue;
                 }
                 if (i + 1 < len && isNameStart(sql.charAt(i + 1), options)
-                        && !isArraySliceBound(sql, i)) {
+                        && !(Character.isDigit(sql.charAt(i + 1)) && Boolean.TRUE.equals(nesting.peek()))) {
                     int j = i + 1;
                     while (j < len && isNamePart(sql.charAt(j))) {
                         j++;
@@ -216,29 +228,33 @@ public final class SqlParameterParser {
     }
 
     /**
-     * Whether the {@code :} at {@code colon}, followed by a digit, is a PostgreSQL
-     * array-slice separator ({@code arr[1:2]}, {@code arr[:2]}, {@code arr[a:2]},
-     * {@code arr[f(x):2]}) rather than the start of a numeric parameter. Only a
-     * digit-leading name can be confused this way, so letter-leading names are
-     * never checked. A colon glued to the end of an operand, or following an
-     * opening bracket, is a slice; a colon after whitespace, an operator, a
-     * comma or an opening parenthesis is a parameter.
+     * Whether the {@code [} at {@code bracket} opens an array subscript or slice
+     * ({@code arr[1:2]}, {@code f(x)[1]}, {@code a[1][2]}) rather than an
+     * {@code ARRAY[...]} constructor. A bracket directly after an expression, which
+     * is a name other than {@code ARRAY}, a {@code ]}, a {@code )} or a quoted
+     * identifier, is a subscript. Inside one, {@code :digit} is a slice bound
+     * however it is spaced; elsewhere it is a numeric parameter.
      */
-    private static boolean isArraySliceBound(String sql, int colon) {
-        if (!Character.isDigit(sql.charAt(colon + 1))) {
-            return false;
-        }
-        if (colon > 0) {
-            char prev = sql.charAt(colon - 1);
-            if (isNamePart(prev) || prev == ']' || prev == ')' || prev == '[') {
-                return true;
-            }
-        }
-        int k = colon - 1;
+    private static boolean isSubscriptBracket(String sql, int bracket) {
+        int k = bracket - 1;
         while (k >= 0 && Character.isWhitespace(sql.charAt(k))) {
             k--;
         }
-        return k >= 0 && sql.charAt(k) == '[';
+        if (k < 0) {
+            return false;
+        }
+        char prev = sql.charAt(k);
+        if (prev == ']' || prev == ')' || prev == '"') {
+            return true;
+        }
+        if (!isNamePart(prev)) {
+            return false;
+        }
+        int start = k;
+        while (start > 0 && isNamePart(sql.charAt(start - 1))) {
+            start--;
+        }
+        return !"ARRAY".equalsIgnoreCase(sql.substring(start, k + 1));
     }
 
     private static boolean isNameStart(char c, Options options) {
