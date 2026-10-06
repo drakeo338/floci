@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Translates SQL statements containing named placeholders ({@code :name}) into
@@ -59,6 +60,11 @@ public final class SqlParameterParser {
         int i = 0;
         // One entry per open bracket or parenthesis; true marks an array subscript.
         Deque<Boolean> nesting = new ArrayDeque<>();
+        // Whether the last significant token (comments and whitespace excluded) ends an
+        // operand: a name, number, literal, quoted identifier, ']' or ')'.
+        boolean afterOperand = false;
+        // Whether the last significant token is the '[' of an array subscript.
+        boolean subscriptStart = false;
         while (i < len) {
             char c = sql.charAt(i);
 
@@ -82,6 +88,8 @@ public final class SqlParameterParser {
                 int end = skipQuoted(sql, i, c, options);
                 out.append(sql, i, end);
                 i = end;
+                afterOperand = true;
+                subscriptStart = false;
                 continue;
             }
 
@@ -90,6 +98,8 @@ public final class SqlParameterParser {
                 if (consumed > i) {
                     out.append(sql, i, consumed);
                     i = consumed;
+                    afterOperand = true;
+                    subscriptStart = false;
                     continue;
                 }
                 out.append(c);
@@ -97,33 +107,76 @@ public final class SqlParameterParser {
                 continue;
             }
 
+            if (isNamePart(c)) {
+                int j = i + 1;
+                while (j < len && isNamePart(sql.charAt(j))) {
+                    j++;
+                }
+                afterOperand = !isNonOperandWord(sql.substring(i, j));
+                subscriptStart = false;
+                out.append(sql, i, j);
+                i = j;
+                continue;
+            }
+
             if (c == '[') {
-                nesting.push(isSubscriptBracket(sql, i));
-            } else if (c == '(') {
+                nesting.push(afterOperand);
+                subscriptStart = afterOperand;
+                afterOperand = false;
+                out.append(c);
+                i++;
+                continue;
+            }
+            if (c == '(') {
                 nesting.push(Boolean.FALSE);
-            } else if ((c == ']' || c == ')') && !nesting.isEmpty()) {
-                nesting.pop();
+                afterOperand = false;
+                subscriptStart = false;
+                out.append(c);
+                i++;
+                continue;
+            }
+            if (c == ']' || c == ')') {
+                if (!nesting.isEmpty()) {
+                    nesting.pop();
+                }
+                afterOperand = true;
+                subscriptStart = false;
+                out.append(c);
+                i++;
+                continue;
             }
 
             if (c == ':') {
                 if (i + 1 < len && sql.charAt(i + 1) == ':') {
                     out.append("::");
                     i += 2;
+                    afterOperand = false;
+                    subscriptStart = false;
                     continue;
                 }
-                if (i + 1 < len && isNameStart(sql.charAt(i + 1), options)
-                        && !(Character.isDigit(sql.charAt(i + 1)) && Boolean.TRUE.equals(nesting.peek()))) {
-                    int j = i + 1;
-                    while (j < len && isNamePart(sql.charAt(j))) {
-                        j++;
+                if (i + 1 < len && isNameStart(sql.charAt(i + 1), options)) {
+                    boolean sliceBound = Character.isDigit(sql.charAt(i + 1))
+                            && Boolean.TRUE.equals(nesting.peek())
+                            && (afterOperand || subscriptStart);
+                    if (!sliceBound) {
+                        int j = i + 1;
+                        while (j < len && isNamePart(sql.charAt(j))) {
+                            j++;
+                        }
+                        order.add(sql.substring(i + 1, j));
+                        out.append('?');
+                        i = j;
+                        afterOperand = true;
+                        subscriptStart = false;
+                        continue;
                     }
-                    order.add(sql.substring(i + 1, j));
-                    out.append('?');
-                    i = j;
-                    continue;
                 }
             }
 
+            if (!Character.isWhitespace(c)) {
+                afterOperand = false;
+                subscriptStart = false;
+            }
             out.append(c);
             i++;
         }
@@ -228,33 +281,19 @@ public final class SqlParameterParser {
     }
 
     /**
-     * Whether the {@code [} at {@code bracket} opens an array subscript or slice
-     * ({@code arr[1:2]}, {@code f(x)[1]}, {@code a[1][2]}) rather than an
-     * {@code ARRAY[...]} constructor. A bracket directly after an expression, which
-     * is a name other than {@code ARRAY}, a {@code ]}, a {@code )} or a quoted
-     * identifier, is a subscript. Inside one, {@code :digit} is a slice bound
-     * however it is spaced; elsewhere it is a numeric parameter.
+     * Whether {@code word} is a keyword that cannot end an operand, so a {@code [}
+     * or {@code :digit} after it is not a subscript or slice bound. {@code ARRAY}
+     * is here because {@code ARRAY[...]} is a constructor, not a subscript.
      */
-    private static boolean isSubscriptBracket(String sql, int bracket) {
-        int k = bracket - 1;
-        while (k >= 0 && Character.isWhitespace(sql.charAt(k))) {
-            k--;
+    private static boolean isNonOperandWord(String word) {
+        switch (word.toUpperCase(Locale.ROOT)) {
+            case "ARRAY", "AND", "OR", "NOT", "IN", "IS", "LIKE", "ILIKE", "BETWEEN", "SELECT",
+                 "WHEN", "THEN", "ELSE", "CASE", "ANY", "ALL", "SOME", "DISTINCT", "WHERE",
+                 "ON", "BY", "FROM", "VALUES", "RETURNING", "SET":
+                return true;
+            default:
+                return false;
         }
-        if (k < 0) {
-            return false;
-        }
-        char prev = sql.charAt(k);
-        if (prev == ']' || prev == ')' || prev == '"') {
-            return true;
-        }
-        if (!isNamePart(prev)) {
-            return false;
-        }
-        int start = k;
-        while (start > 0 && isNamePart(sql.charAt(start - 1))) {
-            start--;
-        }
-        return !"ARRAY".equalsIgnoreCase(sql.substring(start, k + 1));
     }
 
     private static boolean isNameStart(char c, Options options) {

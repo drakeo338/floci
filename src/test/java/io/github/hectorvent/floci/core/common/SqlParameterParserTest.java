@@ -171,7 +171,9 @@ class SqlParameterParserTest {
                 "select arr[a:2] from t", "select arr[ :2] from t", "select a[b[1]:2] from t",
                 "select a[f(x):2] from t", "select a[1:2][3:4] from t", "select arr[1 :2] from t",
                 "select arr[1: 2] from t", "select f(x)[1 :2] from t", "select a[1][2 :3] from t",
-                "select a[b[1] :2] from t"}) {
+                "select a[b[1] :2] from t", "select arr /* note */ [1:2] from t",
+                "select arr -- note\n [1:2] from t", "select f(x) /* note */ [1 :2] from t",
+                "select arr[1/* note */:2] from t", "select arr[:1] from t"}) {
             SqlParameterParser.ParsedSql parsed =
                     SqlParameterParser.parse(sql, SqlParameterParser.Options.RDS_POSTGRESQL);
             assertEquals(sql, parsed.sql());
@@ -207,5 +209,24 @@ class SqlParameterParserTest {
         assertEquals("select a[f(?):2], b[(?) :4], ARRAY[c[1:2], ?], d[ARRAY[?][1]:2] from t where id = ?",
                 p.sql());
         assertEquals(List.of("1", "3", "5", "6", "7"), p.parameterOrder());
+    }
+
+    @Test
+    void numericNamesAfterAnOperatorInsideASubscriptAreParameters() {
+        SqlParameterParser.Options o = SqlParameterParser.Options.RDS_POSTGRESQL;
+        SqlParameterParser.ParsedSql p = SqlParameterParser.parse(
+                "select arr[1 + :1], b[2 * :2 : 3], c[x, :3], d[(1) - :4], e[1:2 + :5] from t", o);
+        assertEquals("select arr[1 + ?], b[2 * ? : 3], c[x, ?], d[(1) - ?], e[1:2 + ?] from t", p.sql());
+        assertEquals(List.of("1", "2", "3", "4", "5"), p.parameterOrder());
+    }
+
+    @Test
+    void numericNamesInASubscriptAfterACommentAreSliceBoundsOrParametersByPosition() {
+        SqlParameterParser.Options o = SqlParameterParser.Options.RDS_POSTGRESQL;
+        SqlParameterParser.ParsedSql p = SqlParameterParser.parse(
+                "select arr /* a */ [1:2], ARRAY /* b */ [:3], arr /* c */ [1 /* d */ + :4] from t", o);
+        assertEquals("select arr /* a */ [1:2], ARRAY /* b */ [?], arr /* c */ [1 /* d */ + ?] from t",
+                p.sql());
+        assertEquals(List.of("3", "4"), p.parameterOrder());
     }
 }
