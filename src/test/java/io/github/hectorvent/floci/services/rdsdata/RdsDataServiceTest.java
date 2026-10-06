@@ -61,7 +61,7 @@ class RdsDataServiceTest {
 
         AwsException error = assertThrows(AwsException.class,
                 () -> harness.service.executeStatement(request, REGION));
-        assertEquals("BadRequestException", error.getErrorCode());
+        assertEquals("UnsupportedResultException", error.getErrorCode());
         assertEquals("Database response exceeded size limit", error.getMessage());
     }
 
@@ -87,6 +87,7 @@ class RdsDataServiceTest {
         ObjectNode over = harness.request("select repeat('x', " + (limit - overhead + 1) + ") as c");
         AwsException error = assertThrows(AwsException.class,
                 () -> harness.service.executeStatement(over, REGION));
+        assertEquals("UnsupportedResultException", error.getErrorCode());
         assertEquals("Database response exceeded size limit", error.getMessage());
     }
 

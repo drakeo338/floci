@@ -550,7 +550,7 @@ public class RdsDataService implements Resettable {
             responseBytes += row.toString().getBytes(StandardCharsets.UTF_8).length
                     + (records.isEmpty() ? 0 : 1);
             if (responseBytes > MAX_RESPONSE_BYTES) {
-                throw new AwsException("BadRequestException", "Database response exceeded size limit", 400);
+                throw new AwsException("UnsupportedResultException", "Database response exceeded size limit", 400);
             }
             records.add(row);
         }
