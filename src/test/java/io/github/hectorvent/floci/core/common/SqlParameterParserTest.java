@@ -173,7 +173,8 @@ class SqlParameterParserTest {
                 "select arr[1: 2] from t", "select f(x)[1 :2] from t", "select a[1][2 :3] from t",
                 "select a[b[1] :2] from t", "select arr /* note */ [1:2] from t",
                 "select arr -- note\n [1:2] from t", "select f(x) /* note */ [1 :2] from t",
-                "select arr[1/* note */:2] from t", "select arr[:1] from t"}) {
+                "select arr[1/* note */:2] from t", "select arr[:1] from t",
+                "select set[1:2] from t", "select by[1:2] from t", "select values[1:2] from t"}) {
             SqlParameterParser.ParsedSql parsed =
                     SqlParameterParser.parse(sql, SqlParameterParser.Options.RDS_POSTGRESQL);
             assertEquals(sql, parsed.sql());

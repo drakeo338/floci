@@ -281,19 +281,18 @@ public final class SqlParameterParser {
     }
 
     /**
-     * Whether {@code word} is a keyword that cannot end an operand, so a {@code [}
-     * or {@code :digit} after it is not a subscript or slice bound. {@code ARRAY}
+     * Whether {@code word} is a keyword that cannot end an operand and can sit right before a
+     * {@code [} or a {@code :digit}, so what follows is not a subscript or slice bound.
+     * Clause words such as {@code SET}, {@code BY}, {@code VALUES} or {@code FROM} are
+     * left out: they never precede those, and a column may carry such a name. {@code ARRAY}
      * is here because {@code ARRAY[...]} is a constructor, not a subscript.
      */
     private static boolean isNonOperandWord(String word) {
-        switch (word.toUpperCase(Locale.ROOT)) {
-            case "ARRAY", "AND", "OR", "NOT", "IN", "IS", "LIKE", "ILIKE", "BETWEEN", "SELECT",
-                 "WHEN", "THEN", "ELSE", "CASE", "ANY", "ALL", "SOME", "DISTINCT", "WHERE",
-                 "ON", "BY", "FROM", "VALUES", "RETURNING", "SET":
-                return true;
-            default:
-                return false;
-        }
+        return switch (word.toUpperCase(Locale.ROOT)) {
+            case "ARRAY", "AND", "OR", "NOT", "IN", "IS", "LIKE", "ILIKE", "BETWEEN",
+                 "WHEN", "THEN", "ELSE", "CASE", "ANY", "ALL", "SOME", "DISTINCT" -> true;
+            default -> false;
+        };
     }
 
     private static boolean isNameStart(char c, Options options) {
